@@ -5,8 +5,17 @@ OPENWEATHER_API_KEY = os.getenv("OPENWEATHER_API_KEY")
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
-def get_weather(lat, lon, name):
+locations = [
+    ("Kadıköy", 40.9919, 29.0252),
+    ("Gebze", 40.8028, 29.4307),
+    ("İzmit", 40.7654, 29.9408),
+    ("Sapanca", 40.6913, 30.2674),
+    ("Sakarya", 40.7731, 30.3948)
+]
+
+def get_weather(name, lat, lon):
     url = "https://api.openweathermap.org/data/2.5/weather"
+
     params = {
         "lat": lat,
         "lon": lon,
@@ -18,64 +27,74 @@ def get_weather(lat, lon, name):
     response = requests.get(url, params=params)
     data = response.json()
 
-    if "main" not in data:
-        raise Exception(f"Hava durumu alınamadı: {data}")
-
     return {
         "name": name,
-        "temp": data["main"]["temp"],
+        "temp": round(data["main"]["temp"]),
         "desc": data["weather"][0]["description"],
         "wind": data["wind"]["speed"]
     }
 
-kadikoy = get_weather(40.9919, 29.0252, "Kadıköy")
-sakarya = get_weather(40.7731, 30.3948, "Sakarya")
-izmit = get_weather(40.7654, 29.9408, "İzmit / Kocaeli")
+weather_data = []
 
-risk_words = ["yağmur", "sağanak", "kar", "fırtına", "dolu", "gök gürültülü"]
-all_desc = f"{kadikoy['desc']} {sakarya['desc']} {izmit['desc']}".lower()
+for loc in locations:
+    weather_data.append(get_weather(*loc))
+
+all_desc = " ".join([x["desc"] for x in weather_data]).lower()
+
+risk_words = [
+    "yağmur",
+    "sağanak",
+    "kar",
+    "fırtına",
+    "gök gürültülü"
+]
+
 risk = any(word in all_desc for word in risk_words)
 
-if min(kadikoy["temp"], sakarya["temp"], izmit["temp"]) <= 8:
-    outfit = "Kalın mont iyi olur."
-elif min(kadikoy["temp"], sakarya["temp"], izmit["temp"]) <= 15:
+coldest = min([x["temp"] for x in weather_data])
+
+if coldest <= 8:
+    outfit = "Kalın mont önerilir."
+elif coldest <= 15:
     outfit = "İnce mont veya ceket uygun olur."
 else:
-    outfit = "Hafif kıyafet yeterli; yanında ince bir üst bulundurabilirsin."
+    outfit = "Hafif kıyafet yeterli görünüyor."
 
-umbrella = "Şemsiye almanı öneririm. ☔" if risk else "Şemsiye şart görünmüyor."
-
-drive = (
-    "Rota uyarısı: İstanbul–Sakarya hattında yağış/kötü hava riski var. Takip mesafeni artır."
+umbrella = (
+    "Şemsiye almanı öneririm ☔"
     if risk else
-    "Rota uyarısı: Belirgin yağış riski görünmüyor."
+    "Şemsiye gerekli görünmüyor."
 )
 
-message = f"""Günaydın Çağatay ☀️
+if risk:
+    traffic = "Yağış nedeniyle yol süresi uzayabilir. Takip mesafeni artır."
+else:
+    traffic = "Belirgin hava riski görünmüyor."
 
-Kadıköy:
-{kadikoy['temp']:.0f}°C - {kadikoy['desc']} - rüzgar {kadikoy['wind']} m/s
+message = "Günaydın Çağatay ☀️\n\n"
 
-İzmit / Kocaeli:
-{izmit['temp']:.0f}°C - {izmit['desc']} - rüzgar {izmit['wind']} m/s
+for item in weather_data:
+    message += (
+        f"{item['name']}:\n"
+        f"{item['temp']}°C - {item['desc']} "
+        f"(rüzgar {item['wind']} m/s)\n\n"
+    )
 
-Sakarya:
-{sakarya['temp']:.0f}°C - {sakarya['desc']} - rüzgar {sakarya['wind']} m/s
-
-Bugün ne giyilir?
+message += f"""Bugün ne giyilir?
 {outfit}
 
 Şemsiye:
 {umbrella}
 
-{drive}
+Rota değerlendirmesi:
+{traffic}
 """
 
-url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+telegram_url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+
 payload = {
     "chat_id": TELEGRAM_CHAT_ID,
     "text": message
 }
 
-response = requests.post(url, json=payload)
-print(response.text)
+requests.post(telegram_url, json=payload)
