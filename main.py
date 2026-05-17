@@ -1,7 +1,5 @@
 import os
 import requests
-from datetime import datetime
-from zoneinfo import ZoneInfo
 from openai import OpenAI
 
 OPENWEATHER_API_KEY = os.getenv("OPENWEATHER_API_KEY")
@@ -21,9 +19,9 @@ locations = [
 ]
 
 def get_route():
-    hour = datetime.now().hour
+    route_mode = os.getenv("ROUTE_MODE", "morning")
 
-    if hour < 12:
+    if route_mode == "morning":
         return {
             "route_text": "İstanbul → Sakarya işe gidiş",
             "origin": "Kadikoy",
@@ -81,12 +79,19 @@ def get_traffic(origin, destination):
         return "Alınamadı", "Alınamadı"
 
     normal_duration = element["duration"]["text"]
-    traffic_duration = element.get("duration_in_traffic", {}).get("text", normal_duration)
+
+    traffic_duration = (
+        element.get("duration_in_traffic", {})
+        .get("text", normal_duration)
+    )
 
     return normal_duration, traffic_duration
 
 def send_telegram(message):
-    telegram_url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+    telegram_url = (
+        f"https://api.telegram.org/bot"
+        f"{TELEGRAM_BOT_TOKEN}/sendMessage"
+    )
 
     payload = {
         "chat_id": TELEGRAM_CHAT_ID,
@@ -99,12 +104,17 @@ def send_telegram(message):
 route = get_route()
 
 weather_data = []
+
 for loc in locations:
     weather_data.append(get_weather(*loc))
 
-normal_time, traffic_time = get_traffic(route["origin"], route["destination"])
+normal_time, traffic_time = get_traffic(
+    route["origin"],
+    route["destination"]
+)
 
 weather_summary = ""
+
 for item in weather_data:
     weather_summary += (
         f"{item['name']}: "
@@ -147,7 +157,10 @@ try:
         messages=[
             {
                 "role": "system",
-                "content": "Kısa, doğal, güvenli ve pratik konuş. Asla hız yapmayı önerme."
+                "content": (
+                    "Kısa, doğal, güvenli ve pratik konuş. "
+                    "Asla hız yapmayı önerme."
+                )
             },
             {
                 "role": "user",
@@ -159,21 +172,24 @@ try:
     ai_message = response.choices[0].message.content
 
 except Exception as e:
-    ai_message = f"""{route['greeting']}
+
+    ai_message = f"""
+{route['greeting']}
 
 {route['route_text']} 🚗
 
-Hava durumu:
+Hava Durumu:
 {weather_summary}
 
 Trafik:
 Normal süre: {normal_time}
 Anlık süre: {traffic_time}
 
-Not: AI yorumu alınamadı ama hava ve trafik bilgileri yukarıda.
+(OpenAI yorumu alınamadı)
 """
 
-final_message = f"""{route['greeting']}
+final_message = f"""
+{route['greeting']}
 
 {route['route_text']} 🚗
 
