@@ -2,6 +2,7 @@ import os
 import requests
 
 OPENWEATHER_API_KEY = os.getenv("OPENWEATHER_API_KEY")
+GOOGLE_MAPS_API_KEY = os.getenv("GOOGLE_MAPS_API_KEY")
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
@@ -33,6 +34,26 @@ def get_weather(name, lat, lon):
         "desc": data["weather"][0]["description"],
         "wind": data["wind"]["speed"]
     }
+
+def get_traffic():
+    url = "https://maps.googleapis.com/maps/api/distancematrix/json"
+
+    params = {
+        "origins": "Kadikoy",
+        "destinations": "Sakarya",
+        "departure_time": "now",
+        "key": GOOGLE_MAPS_API_KEY
+    }
+
+    response = requests.get(url, params=params)
+    data = response.json()
+
+    element = data["rows"][0]["elements"][0]
+
+    normal_duration = element["duration"]["text"]
+    traffic_duration = element["duration_in_traffic"]["text"]
+
+    return normal_duration, traffic_duration
 
 weather_data = []
 
@@ -67,9 +88,14 @@ umbrella = (
 )
 
 if risk:
-    traffic = "Yağış nedeniyle yol süresi uzayabilir. Takip mesafeni artır."
+    traffic_warning = (
+        "Yağış nedeniyle yol süresi uzayabilir. "
+        "Takip mesafeni artır."
+    )
 else:
-    traffic = "Belirgin hava riski görünmüyor."
+    traffic_warning = "Belirgin hava riski görünmüyor."
+
+normal_time, traffic_time = get_traffic()
 
 message = "Günaydın Çağatay ☀️\n\n"
 
@@ -80,6 +106,12 @@ for item in weather_data:
         f"(rüzgar {item['wind']} m/s)\n\n"
     )
 
+message += (
+    f"Trafik Durumu:\n"
+    f"Normal süre: {normal_time}\n"
+    f"Anlık tahmini süre: {traffic_time}\n\n"
+)
+
 message += f"""Bugün ne giyilir?
 {outfit}
 
@@ -87,10 +119,13 @@ message += f"""Bugün ne giyilir?
 {umbrella}
 
 Rota değerlendirmesi:
-{traffic}
+{traffic_warning}
 """
 
-telegram_url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+telegram_url = (
+    f"https://api.telegram.org/bot"
+    f"{TELEGRAM_BOT_TOKEN}/sendMessage"
+)
 
 payload = {
     "chat_id": TELEGRAM_CHAT_ID,
