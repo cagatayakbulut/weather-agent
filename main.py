@@ -1,6 +1,7 @@
 import os
 import requests
 from datetime import datetime
+from zoneinfo import ZoneInfo
 from openai import OpenAI
 
 OPENWEATHER_API_KEY = os.getenv("OPENWEATHER_API_KEY")
