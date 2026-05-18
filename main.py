@@ -1,5 +1,4 @@
 import os
-import re
 import requests
 from openai import OpenAI
 
@@ -100,11 +99,11 @@ def get_traffic(origin, destination):
         diff_minutes = round((traffic_seconds - normal_seconds) / 60)
 
         if diff_minutes > 0:
-            traffic_difference = f"Normalden yaklaşık {diff_minutes} dk daha uzun"
+            traffic_difference = f"+{diff_minutes} dk"
         elif diff_minutes < 0:
-            traffic_difference = f"Normalden yaklaşık {abs(diff_minutes)} dk daha kısa"
+            traffic_difference = f"-{abs(diff_minutes)} dk"
         else:
-            traffic_difference = "Normal süreye yakın"
+            traffic_difference = "0 dk"
 
         return normal_duration, traffic_duration, traffic_difference
 
@@ -147,25 +146,27 @@ for item in weather_data:
     )
 
 prompt = f"""
-Sen profesyonel bir kişisel sürüş, rota ve hava asistanısın.
+Sen premium seviyede profesyonel sürüş, rota ve hava asistanısın.
 
 Kullanıcı:
 - Kadıköy'de yaşıyor
 - Her gün araç ile Sakarya'ya gidip geliyor
-- Sabah İstanbul'dan Sakarya'ya gider
-- Akşam Sakarya'dan İstanbul'a döner
-- Şu anki rota: {route['route_text']}
+- Sabah İstanbul → Sakarya
+- Akşam Sakarya → İstanbul
 
-Başlangıç adresi:
+Şu anki rota:
+{route['route_text']}
+
+Başlangıç:
 {route['origin']}
 
-Varış adresi:
+Varış:
 {route['destination']}
 
-Hava Durumu:
+Hava verileri:
 {weather_summary}
 
-Sıcaklık aralığı:
+Sıcaklık:
 En düşük: {min_temp}°C
 En yüksek: {max_temp}°C
 
@@ -174,22 +175,37 @@ Normal süre: {normal_time}
 Anlık süre: {traffic_time}
 Fark: {traffic_difference}
 
-Cevap formatı:
-1. Genel hava özeti
-2. En kritik rota riski
-3. Kıyafet önerisi
-4. Şemsiye önerisi
-5. Trafik değerlendirmesi
-6. Kısa sürüş tavsiyesi
+AŞAĞIDAKİ FORMATA MUTLAKA UY:
+
+Genel:
+Rota boyunca sıcaklık [en düşük]-[en yüksek]°C aralığında. Hava durumunu net özetle.
+
+Risk:
+Yağmur, kar, dolu, sis veya rüzgar riski varsa belirt. Yoksa açıkça risk görünmediğini söyle.
+
+Kıyafet:
+Somut kıyafet önerisi ver.
+
+Şemsiye:
+Gerekli / gerekli değil kararını net söyle.
+
+Trafik:
+Normal süre: {normal_time}
+Anlık süre: {traffic_time}
+Fark: {traffic_difference}
+
+Sürüş:
+Güvenli sürüş tavsiyesi ver. Hız sınırlarına uyulmasını mutlaka belirt.
 
 Kurallar:
-- Net ve düzgün Türkçe kullan
+- Yukarıdaki başlıkları aynen kullan
+- Trafik süresini MUTLAKA belirt
+- Sıcaklık aralığını MUTLAKA belirt
+- Somut veri kullan
 - Devrik cümle kurma
-- Somut metrik ver
-- Yağmur, kar, dolu, rüzgar ve sis risklerini belirt
+- Gereksiz samimiyet kullanma
 - Asla hız yapmayı önerme
-- Trafik iyi olsa bile hız sınırlarına uymayı söyle
-- Maksimum 10 satır yaz
+- Maksimum 12 satır yaz
 """
 
 try:
@@ -198,11 +214,19 @@ try:
         messages=[
             {
                 "role": "system",
-                "content": (
-                    "Profesyonel sürüş ve hava asistanı gibi konuş. "
-                    "Kısa, net, veri odaklı ve güvenli tavsiye ver. "
-                    "Asla hız yapmayı önermeyen, düzgün Türkçe kullanan bir asistansın."
-                )
+                "content": """
+Sen profesyonel seviyede operasyonel sürüş asistanısın.
+
+Kurallar:
+- Başlık kullan
+- Trafik süresini MUTLAKA belirt
+- Sıcaklık aralığını MUTLAKA belirt
+- Somut veri kullan
+- Kısa ama metrik odaklı yaz
+- Devrik cümle kullanma
+- Gereksiz samimiyet kullanma
+- Asla hız yapmayı önerme
+"""
             },
             {
                 "role": "user",
@@ -215,12 +239,26 @@ try:
 
 except Exception:
     ai_message = f"""
-Genel hava özeti: Rota boyunca sıcaklık {min_temp}°C - {max_temp}°C aralığında.
-Rota hava durumu:
+Genel:
+Rota boyunca sıcaklık {min_temp}°C - {max_temp}°C aralığında.
+
+Risk:
+Hava verileri aşağıdadır:
 {weather_summary}
-Trafik: Normal süre {normal_time}, anlık süre {traffic_time}. Fark: {traffic_difference}.
-Kıyafet: Sıcaklık aralığına göre ceket veya ince mont tercih edilebilir.
-Sürüş: Hız sınırlarına uyarak ve takip mesafesini koruyarak ilerle.
+
+Kıyafet:
+Sıcaklık aralığına göre ince ceket veya hafif mont tercih edilebilir.
+
+Şemsiye:
+Yağış görünüyorsa şemsiye alınmalıdır.
+
+Trafik:
+Normal süre: {normal_time}
+Anlık süre: {traffic_time}
+Fark: {traffic_difference}
+
+Sürüş:
+Hız sınırlarına uyarak ve takip mesafesini koruyarak ilerle.
 """
 
 final_message = f"""{route['greeting']}
