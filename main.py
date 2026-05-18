@@ -1,4 +1,5 @@
 import os
+import re
 import requests
 from openai import OpenAI
 
@@ -7,6 +8,9 @@ GOOGLE_MAPS_API_KEY = os.getenv("GOOGLE_MAPS_API_KEY")
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+
+HOME_ADDRESS = os.getenv("HOME_ADDRESS", "Kadikoy, Istanbul")
+WORK_ADDRESS = os.getenv("WORK_ADDRESS", "Sakarya")
 
 client = OpenAI(api_key=OPENAI_API_KEY)
 
@@ -24,17 +28,17 @@ def get_route():
     if route_mode == "morning":
         return {
             "route_text": "İstanbul → Sakarya işe gidiş",
-            "origin": "Kadikoy",
-            "destination": "Sakarya",
+            "origin": HOME_ADDRESS,
+            "destination": WORK_ADDRESS,
             "greeting": "Günaydın Çağatay ☀️"
         }
-    else:
-        return {
-            "route_text": "Sakarya → İstanbul dönüş",
-            "origin": "Sakarya",
-            "destination": "Kadikoy",
-            "greeting": "İyi akşamlar Çağatay 🌙"
-        }
+
+    return {
+        "route_text": "Sakarya → İstanbul dönüş",
+        "origin": WORK_ADDRESS,
+        "destination": HOME_ADDRESS,
+        "greeting": "İyi akşamlar Çağatay 🌙"
+    }
 
 def get_weather(name, lat, lon):
     url = "https://api.openweathermap.org/data/2.5/weather"
@@ -67,31 +71,48 @@ def get_traffic(origin, destination):
         "origins": origin,
         "destinations": destination,
         "departure_time": "now",
+        "language": "tr",
+        "region": "tr",
         "key": GOOGLE_MAPS_API_KEY
     }
 
     response = requests.get(url, params=params)
     data = response.json()
 
-    element = data["rows"][0]["elements"][0]
+    try:
+        element = data["rows"][0]["elements"][0]
 
-    if element.get("status") != "OK":
-        return "Alınamadı", "Alınamadı"
+        if element.get("status") != "OK":
+            return "Alınamadı", "Alınamadı", "Alınamadı"
 
-    normal_duration = element["duration"]["text"]
+        normal_duration = element["duration"]["text"]
+        traffic_duration = element.get("duration_in_traffic", {}).get(
+            "text",
+            normal_duration
+        )
 
-    traffic_duration = (
-        element.get("duration_in_traffic", {})
-        .get("text", normal_duration)
-    )
+        normal_seconds = element["duration"]["value"]
+        traffic_seconds = element.get("duration_in_traffic", {}).get(
+            "value",
+            normal_seconds
+        )
 
-    return normal_duration, traffic_duration
+        diff_minutes = round((traffic_seconds - normal_seconds) / 60)
+
+        if diff_minutes > 0:
+            traffic_difference = f"Normalden yaklaşık {diff_minutes} dk daha uzun"
+        elif diff_minutes < 0:
+            traffic_difference = f"Normalden yaklaşık {abs(diff_minutes)} dk daha kısa"
+        else:
+            traffic_difference = "Normal süreye yakın"
+
+        return normal_duration, traffic_duration, traffic_difference
+
+    except Exception:
+        return "Alınamadı", "Alınamadı", "Alınamadı"
 
 def send_telegram(message):
-    telegram_url = (
-        f"https://api.telegram.org/bot"
-        f"{TELEGRAM_BOT_TOKEN}/sendMessage"
-    )
+    telegram_url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
 
     payload = {
         "chat_id": TELEGRAM_CHAT_ID,
@@ -104,17 +125,19 @@ def send_telegram(message):
 route = get_route()
 
 weather_data = []
-
 for loc in locations:
     weather_data.append(get_weather(*loc))
 
-normal_time, traffic_time = get_traffic(
+normal_time, traffic_time, traffic_difference = get_traffic(
     route["origin"],
     route["destination"]
 )
 
-weather_summary = ""
+temperatures = [item["temp"] for item in weather_data]
+min_temp = min(temperatures)
+max_temp = max(temperatures)
 
+weather_summary = ""
 for item in weather_data:
     weather_summary += (
         f"{item['name']}: "
@@ -124,7 +147,7 @@ for item in weather_data:
     )
 
 prompt = f"""
-Sen kişisel bir günlük sürüş ve kıyafet asistanısın.
+Sen profesyonel bir kişisel sürüş, rota ve hava asistanısın.
 
 Kullanıcı:
 - Kadıköy'de yaşıyor
@@ -133,22 +156,40 @@ Kullanıcı:
 - Akşam Sakarya'dan İstanbul'a döner
 - Şu anki rota: {route['route_text']}
 
-Aşağıdaki hava ve trafik durumuna göre:
-- ne giymesi gerektiğini söyle
-- şemsiye gerekip gerekmediğini söyle
-- rota risklerini değerlendir
-- yağmur, kar, dolu, rüzgar, sis gibi riskleri belirt
-- sürüş tavsiyesi ver
-- asla hız yapmayı veya daha hızlı gitmeyi önermeyin
-- trafik iyi olsa bile hız sınırlarına uymayı söyle
-- kısa, doğal ve pratik konuş
+Başlangıç adresi:
+{route['origin']}
+
+Varış adresi:
+{route['destination']}
 
 Hava Durumu:
 {weather_summary}
 
+Sıcaklık aralığı:
+En düşük: {min_temp}°C
+En yüksek: {max_temp}°C
+
 Trafik:
 Normal süre: {normal_time}
 Anlık süre: {traffic_time}
+Fark: {traffic_difference}
+
+Cevap formatı:
+1. Genel hava özeti
+2. En kritik rota riski
+3. Kıyafet önerisi
+4. Şemsiye önerisi
+5. Trafik değerlendirmesi
+6. Kısa sürüş tavsiyesi
+
+Kurallar:
+- Net ve düzgün Türkçe kullan
+- Devrik cümle kurma
+- Somut metrik ver
+- Yağmur, kar, dolu, rüzgar ve sis risklerini belirt
+- Asla hız yapmayı önerme
+- Trafik iyi olsa bile hız sınırlarına uymayı söyle
+- Maksimum 10 satır yaz
 """
 
 try:
@@ -158,8 +199,9 @@ try:
             {
                 "role": "system",
                 "content": (
-                    "Kısa, doğal, güvenli ve pratik konuş. "
-                    "Asla hız yapmayı önerme."
+                    "Profesyonel sürüş ve hava asistanı gibi konuş. "
+                    "Kısa, net, veri odaklı ve güvenli tavsiye ver. "
+                    "Asla hız yapmayı önermeyen, düzgün Türkçe kullanan bir asistansın."
                 )
             },
             {
@@ -171,25 +213,17 @@ try:
 
     ai_message = response.choices[0].message.content
 
-except Exception as e:
-
+except Exception:
     ai_message = f"""
-{route['greeting']}
-
-{route['route_text']} 🚗
-
-Hava Durumu:
+Genel hava özeti: Rota boyunca sıcaklık {min_temp}°C - {max_temp}°C aralığında.
+Rota hava durumu:
 {weather_summary}
-
-Trafik:
-Normal süre: {normal_time}
-Anlık süre: {traffic_time}
-
-(OpenAI yorumu alınamadı)
+Trafik: Normal süre {normal_time}, anlık süre {traffic_time}. Fark: {traffic_difference}.
+Kıyafet: Sıcaklık aralığına göre ceket veya ince mont tercih edilebilir.
+Sürüş: Hız sınırlarına uyarak ve takip mesafesini koruyarak ilerle.
 """
 
-final_message = f"""
-{route['greeting']}
+final_message = f"""{route['greeting']}
 
 {route['route_text']} 🚗
 
